@@ -884,6 +884,7 @@ pnpm example:arb-service  # Arbitrage service
 | [12-trending-arb-monitor.ts](examples/12-trending-arb-monitor.ts) | Real-time trending monitor |
 | [13-arbitrage-service.ts](examples/13-arbitrage-service.ts) | Full arbitrage workflow |
 | [14-dip-arb-service.ts](examples/14-dip-arb-service.ts) | Dip arbitrage for 15m crypto |
+| [15-funder-address-usage.ts](examples/15-funder-address-usage.ts) | Using proxy wallet address for trading |
 
 **DipArb Scripts** (in `scripts/dip-arb/`):
 | Script | Description |
