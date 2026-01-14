@@ -1,4 +1,7 @@
 {
+  // Note: This file previously extended a non-existent ../../tsconfig.base.json
+  // which was causing build failures. The configuration has been inlined here
+  // to make the project self-contained and buildable.
   "compilerOptions": {
     "target": "ES2020",
     "module": "ES2020",
