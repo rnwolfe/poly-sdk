@@ -207,9 +207,7 @@ export class TradingService {
     }
 
     // Re-initialize with L2 auth (credentials) and funderAddress
-    // Note: signatureType is undefined to use the ClobClient's default signature type.
-    // This allows the client to automatically determine the appropriate signature method
-    // based on the wallet type (EOA, Gnosis Safe, etc.).
+    // signatureType is undefined to let ClobClient auto-detect the signature method
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
@@ -219,7 +217,7 @@ export class TradingService {
         secret: this.credentials.secret,
         passphrase: this.credentials.passphrase,
       },
-      undefined, // signatureType (use default)
+      undefined, // signatureType (auto-detect)
       this.funderAddress // funderAddress (proxy wallet address)
     );
 
