@@ -73,5 +73,35 @@ describe('TradingService Integration', () => {
 
       console.log(`✓ Wallet address: ${address.slice(0, 10)}...`);
     });
+
+    it('should return EOA address as funder address when not configured', () => {
+      const funderAddress = service.getFunderAddress();
+      const eoaAddress = service.getAddress();
+      
+      expect(funderAddress).toBe(eoaAddress);
+      console.log(`✓ Funder address (no config): ${funderAddress.slice(0, 10)}...`);
+    });
+  });
+
+  describe('funderAddress configuration', () => {
+    it('should use provided funderAddress instead of EOA', async () => {
+      const proxyWalletAddress = '0x1234567890123456789012345678901234567890';
+      
+      const serviceWithFunder = new TradingService(new RateLimiter(), createUnifiedCache(), {
+        privateKey: '0x' + '1'.repeat(64),
+        funderAddress: proxyWalletAddress,
+      });
+
+      await serviceWithFunder.initialize();
+      
+      const funderAddress = serviceWithFunder.getFunderAddress();
+      const eoaAddress = serviceWithFunder.getAddress();
+      
+      expect(funderAddress).toBe(proxyWalletAddress);
+      expect(funderAddress).not.toBe(eoaAddress);
+      
+      console.log(`✓ EOA address: ${eoaAddress.slice(0, 10)}...`);
+      console.log(`✓ Funder address: ${funderAddress.slice(0, 10)}...`);
+    }, 30000);
   });
 });

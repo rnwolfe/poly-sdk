@@ -119,6 +119,14 @@ export interface PolySDKOptions {
     secret: string;
     passphrase: string;
   };
+
+  /**
+   * Funder address (proxy wallet address) for order creation.
+   * If provided, this address will be used as the maker of orders instead of the EOA.
+   * This is typically the Polymarket proxy wallet address where you hold funds.
+   * If not provided, the EOA address derived from privateKey will be used.
+   */
+  funderAddress?: string;
 }
 
 // K-Line interval types
