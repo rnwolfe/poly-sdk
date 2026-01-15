@@ -2,9 +2,7 @@ import { PolymarketSDK } from '../src/index.js';
 
 const privateKey = process.env.PRIVATE_KEY || process.env.POLYMARKET_PRIVATE_KEY || process.env.POLY_PRIVKEY;
 const funderAddress = process.env.POLYMARKET_PROXY_ADDRESS || process.env.FUNDER_ADDRESS;
-const signatureType = process.env.POLY_SIGNATURE_TYPE
-  ? Number(process.env.POLY_SIGNATURE_TYPE)
-  : 2;
+const signatureTypeRaw = process.env.POLY_SIGNATURE_TYPE;
 
 if (!privateKey) {
   throw new Error('Missing PRIVATE_KEY');
@@ -13,6 +11,12 @@ if (!privateKey) {
 if (!funderAddress) {
   throw new Error('Missing POLYMARKET_PROXY_ADDRESS');
 }
+
+if (!signatureTypeRaw) {
+  throw new Error('Missing POLY_SIGNATURE_TYPE (1 = POLY_PROXY, 2 = POLY_GNOSIS_SAFE)');
+}
+
+const signatureType = Number(signatureTypeRaw);
 
 const sdk = await PolymarketSDK.create({
   privateKey,

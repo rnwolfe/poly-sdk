@@ -190,14 +190,6 @@ export class TradingService {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    const headerSigner = this.funderAddress
-      ? (() => {
-          const signer = new Wallet(this.wallet.privateKey);
-          signer.getAddress = async () => this.funderAddress!;
-          return signer;
-        })()
-      : undefined;
-
     // Create CLOB client with L1 auth (wallet)
     this.clobClient = new ClobClient(CLOB_HOST, this.chainId, this.wallet);
 
@@ -227,18 +219,14 @@ export class TradingService {
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
-      headerSigner ?? this.wallet,
+      this.wallet,
       {
         key: this.credentials.key,
         secret: this.credentials.secret,
         passphrase: this.credentials.passphrase,
       },
       resolvedSignatureType,
-      this.funderAddress,
-      undefined,
-      undefined,
-      undefined,
-      () => this.wallet
+      this.funderAddress
     );
 
     this.initialized = true;
