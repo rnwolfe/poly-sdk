@@ -33,7 +33,7 @@ interface CliArgs {
   slidingWindowMs: number;   // 滑动窗口 (毫秒)
   leg2TimeoutSeconds: number; // 止损时间 (秒)
   sumTarget: number;         // 总成本目标
-  shares: number;            // 每次交易份数
+  allocation: number;
   balanceUtilization: number;
   dryRun: boolean;
   singleRound: boolean;
@@ -78,7 +78,7 @@ function parseArgs(): CliArgs {
     slidingWindowMs: getArgValue('window', defaults.slidingWindowMs!),
     leg2TimeoutSeconds: getArgValue('timeout', defaults.leg2TimeoutSeconds!),
     sumTarget: getArgValue('target', defaults.sumTarget!),
-    shares: getArgValue('shares', 25),
+    allocation: getArgValue('alloc', 0.2),
     balanceUtilization: getArgValue('util', 0.8),
     dryRun: hasFlag('--dry-run'),
     singleRound: hasFlag('--single-round'),
@@ -168,8 +168,8 @@ async function main() {
   // ========================================
   const config = {
     // 交易参数 (支持命令行覆盖)
-    shares: CLI_ARGS.shares,           // --shares=25
-    sumTarget: CLI_ARGS.sumTarget,     // --target=0.95
+    shares: 5,
+    sumTarget: CLI_ARGS.sumTarget,
 
     // 订单拆分参数
     splitOrders: 1,          // 单笔下单，避免份额不匹配
@@ -202,24 +202,6 @@ async function main() {
   // Start initial log
   startNewMarketLog('init');
 
-  log('');
-  log('╔══════════════════════════════════════════════════════════╗');
-  log(`║           DipArb Auto Trading - ${SELECTED_COIN} Markets              ║`);
-  log('╠══════════════════════════════════════════════════════════╣');
-  log(`║  Dip Threshold:   ${(config.dipThreshold * 100).toFixed(0)}% in ${config.slidingWindowMs / 1000}s window                    ║`);
-  log(`║  Sum Target:      ${config.sumTarget} (profit >= ${expectedProfit}%)                   ║`);
-  log(`║  Stop Loss:       ${config.leg2TimeoutSeconds}s after Leg1                             ║`);
-  log(`║  Shares/Trade:    ${config.shares}                                          ║`);
-  log(`║  Order Type:      Market Order (Leg1 + Leg2 + Exit)              ║`);
-  log(`║  Dry Run:         ${CLI_ARGS.dryRun ? 'ON' : 'OFF'}                                     ║`);
-  log(`║  Single Round:    ${CLI_ARGS.singleRound ? 'ON' : 'OFF'}                                     ║`);
-  log(`║  Duration:        ${CLI_ARGS.monitorMinutes}m                                         ║`);
-  log(`║  Log Directory:   ${LOG_DIR}`);
-  log('╚══════════════════════════════════════════════════════════╝');
-  log('');
-  log('Usage: npx tsx auto-trade.ts --xrp [--dip=0.40] [--window=3000] [--timeout=60] [--shares=25] [--target=0.95] [--util=0.8] [--duration=60] [--dry-run] [--single-round]');
-  log('');
-
   // Initialize SDK
   log('Initializing SDK...');
   const sdkConfig: { privateKey: string; funderAddress?: string; signatureType?: number } = {
@@ -248,23 +230,38 @@ async function main() {
     ? Number.POSITIVE_INFINITY
     : parseFloat(balanceResult.allowance) / 1e6;
 
-  const maxBudget = balanceUsd * CLI_ARGS.balanceUtilization;
-  const maxShares = Math.floor(maxBudget / config.sumTarget);
-
-  log(`Balance: $${balanceUsd.toFixed(2)} | Allowance: ${allowanceUsd === Number.POSITIVE_INFINITY ? 'Unlimited' : `$${allowanceUsd.toFixed(2)}`} | Utilization: ${(CLI_ARGS.balanceUtilization * 100).toFixed(0)}%`);
-
-  if (config.shares > maxShares && maxShares >= 5) {
-    log(`Adjusting shares from ${config.shares} to ${maxShares} based on balance`);
-    config.shares = maxShares;
+  if (CLI_ARGS.allocation <= 0 || CLI_ARGS.allocation > 1) {
+    log('Error: --alloc must be within (0, 1]');
+    saveCurrentLog('invalid-allocation');
+    return;
   }
 
-  const expectedCost = config.shares * config.sumTarget;
+  if (CLI_ARGS.balanceUtilization <= 0 || CLI_ARGS.balanceUtilization > 1) {
+    log('Error: --util must be within (0, 1]');
+    saveCurrentLog('invalid-utilization');
+    return;
+  }
 
-  if (!CLI_ARGS.dryRun && maxShares < 5) {
-    log(`Insufficient balance for minimum trade size. Required >= $${(5 * config.sumTarget).toFixed(2)}`);
+  const effectiveAllocation = Math.min(CLI_ARGS.allocation, CLI_ARGS.balanceUtilization);
+  const minShares = 5;
+  const maxBudget = balanceUsd * CLI_ARGS.balanceUtilization;
+  const targetBudget = balanceUsd * effectiveAllocation;
+  const maxShares = Math.floor(maxBudget / config.sumTarget);
+  const targetShares = Math.floor(targetBudget / config.sumTarget);
+  const recommendedMinBalance = (minShares * config.sumTarget) / effectiveAllocation;
+
+  log(`Balance: $${balanceUsd.toFixed(2)} | Allowance: ${allowanceUsd === Number.POSITIVE_INFINITY ? 'Unlimited' : `$${allowanceUsd.toFixed(2)}`} | Allocation: ${(effectiveAllocation * 100).toFixed(0)}% | Utilization: ${(CLI_ARGS.balanceUtilization * 100).toFixed(0)}%`);
+
+  if (!CLI_ARGS.dryRun && maxShares < minShares) {
+    log(`Insufficient balance for minimum trade size. Recommended >= $${recommendedMinBalance.toFixed(2)}`);
     saveCurrentLog('insufficient-balance');
     return;
   }
+
+  const shares = Math.max(targetShares, minShares);
+  config.shares = shares;
+
+  const expectedCost = config.shares * config.sumTarget;
 
   if (!CLI_ARGS.dryRun && allowanceUsd < expectedCost) {
     log(`Insufficient allowance for expected cost $${expectedCost.toFixed(2)}`);
@@ -273,6 +270,27 @@ async function main() {
   }
 
   sdk.dipArb.updateConfig(config);
+
+  log('');
+  log('╔══════════════════════════════════════════════════════════╗');
+  log(`║           DipArb Auto Trading - ${SELECTED_COIN} Markets              ║`);
+  log('╠══════════════════════════════════════════════════════════╣');
+  log(`║  Dip Threshold:   ${(config.dipThreshold * 100).toFixed(0)}% in ${config.slidingWindowMs / 1000}s window                    ║`);
+  log(`║  Sum Target:      ${config.sumTarget} (profit >= ${expectedProfit}%)                   ║`);
+  log(`║  Stop Loss:       ${config.leg2TimeoutSeconds}s after Leg1                             ║`);
+  log(`║  Shares/Trade:    ${config.shares}                                          ║`);
+  log(`║  Allocation:      ${(effectiveAllocation * 100).toFixed(0)}%                                      ║`);
+  log(`║  Utilization:     ${(CLI_ARGS.balanceUtilization * 100).toFixed(0)}%                                      ║`);
+  log(`║  Min Balance:     $${recommendedMinBalance.toFixed(2)}                                   ║`);
+  log(`║  Order Type:      Market Order (Leg1 + Leg2 + Exit)              ║`);
+  log(`║  Dry Run:         ${CLI_ARGS.dryRun ? 'ON' : 'OFF'}                                     ║`);
+  log(`║  Single Round:    ${CLI_ARGS.singleRound ? 'ON' : 'OFF'}                                     ║`);
+  log(`║  Duration:        ${CLI_ARGS.monitorMinutes}m                                         ║`);
+  log(`║  Log Directory:   ${LOG_DIR}`);
+  log('╚══════════════════════════════════════════════════════════╝');
+  log('');
+  log('Usage: npx tsx auto-trade.ts --xrp [--dip=0.40] [--window=3000] [--timeout=60] [--target=0.95] [--alloc=0.20] [--util=0.80] [--duration=60] [--dry-run] [--single-round]');
+  log('');
 
   // ========================================
   // Event Listeners
