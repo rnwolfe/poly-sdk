@@ -190,8 +190,16 @@ export class TradingService {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
+    const headerSigner = this.funderAddress
+      ? (() => {
+          const signer = new Wallet(this.wallet.privateKey);
+          signer.getAddress = async () => this.funderAddress!;
+          return signer;
+        })()
+      : this.wallet;
+
     // Create CLOB client with L1 auth (wallet)
-    this.clobClient = new ClobClient(CLOB_HOST, this.chainId, this.wallet);
+    this.clobClient = new ClobClient(CLOB_HOST, this.chainId, headerSigner);
 
     // Get or create API credentials
     // We use derive-first strategy (opposite of official createOrDeriveApiKey)
@@ -219,14 +227,18 @@ export class TradingService {
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
-      this.wallet,
+      headerSigner,
       {
         key: this.credentials.key,
         secret: this.credentials.secret,
         passphrase: this.credentials.passphrase,
       },
       resolvedSignatureType,
-      this.funderAddress
+      this.funderAddress,
+      undefined,
+      undefined,
+      undefined,
+      () => this.wallet
     );
 
     this.initialized = true;
