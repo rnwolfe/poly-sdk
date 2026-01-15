@@ -1,7 +1,7 @@
 import { PolymarketSDK } from '../src/index.js';
 
-const privateKey = process.env.PRIVATE_KEY;
-const funderAddress = process.env.POLYMARKET_PROXY_ADDRESS;
+const privateKey = process.env.PRIVATE_KEY || process.env.POLYMARKET_PRIVATE_KEY || process.env.POLY_PRIVKEY;
+const funderAddress = process.env.POLYMARKET_PROXY_ADDRESS || process.env.FUNDER_ADDRESS;
 const signatureType = process.env.POLY_SIGNATURE_TYPE
   ? Number(process.env.POLY_SIGNATURE_TYPE)
   : 2;
