@@ -21,6 +21,7 @@ import {
   type Trade as ClobTrade,
   type TickSize,
 } from '@polymarket/clob-client';
+import { SignatureType } from '@polymarket/order-utils';
 
 import { Wallet } from 'ethers';
 import { RateLimiter, ApiType } from '../core/rate-limiter.js';
@@ -74,14 +75,10 @@ export interface TradingServiceConfig {
   chainId?: number;
   /** Pre-generated API credentials (optional) */
   credentials?: ApiCredentials;
-  /** 
-   * Funder address (proxy wallet address) for order creation.
-   * If provided, this address will be used as the maker of orders instead of the EOA.
-   * This is typically the Polymarket proxy wallet address where you hold funds.
-   * If not provided, the EOA address will be used.
-   */
   funderAddress?: string;
+  signatureType?: SignatureType;
 }
+
 
 // Order types
 export interface LimitOrderParams {
@@ -169,6 +166,7 @@ export class TradingService {
   private chainId: Chain;
   private credentials: ApiCredentials | null = null;
   private funderAddress: string | undefined;
+  private signatureType: SignatureType | undefined;
   private initialized = false;
   private tickSizeCache: Map<string, string> = new Map();
   private negRiskCache: Map<string, boolean> = new Map();
@@ -182,6 +180,7 @@ export class TradingService {
     this.chainId = (config.chainId || POLYGON_MAINNET) as Chain;
     this.credentials = config.credentials || null;
     this.funderAddress = config.funderAddress;
+    this.signatureType = config.signatureType;
   }
 
   // ============================================================================
@@ -208,6 +207,15 @@ export class TradingService {
 
     // Re-initialize with L2 auth (credentials) and funderAddress
     // signatureType is undefined to let ClobClient auto-detect the signature method
+    if (this.funderAddress && this.signatureType === undefined) {
+      throw new PolymarketError(
+        ErrorCode.INVALID_CONFIG,
+        'signatureType is required when funderAddress is provided. Use 1 (POLY_PROXY) or 2 (POLY_GNOSIS_SAFE).'
+      );
+    }
+
+    const resolvedSignatureType = this.signatureType ?? SignatureType.EOA;
+
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
@@ -217,8 +225,8 @@ export class TradingService {
         secret: this.credentials.secret,
         passphrase: this.credentials.passphrase,
       },
-      undefined, // signatureType (auto-detect)
-      this.funderAddress // funderAddress (proxy wallet address)
+      resolvedSignatureType,
+      this.funderAddress
     );
 
     this.initialized = true;

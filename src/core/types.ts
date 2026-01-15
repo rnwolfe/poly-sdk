@@ -3,6 +3,7 @@
  */
 
 import type { CacheAdapter } from '@catalyst-team/cache';
+import type { SignatureType } from '@polymarket/order-utils';
 
 // ===== Basic Trading Types =====
 
@@ -127,6 +128,8 @@ export interface PolySDKOptions {
    * If not provided, the EOA address derived from privateKey will be used.
    */
   funderAddress?: string;
+
+  signatureType?: SignatureType;
 }
 
 // K-Line interval types

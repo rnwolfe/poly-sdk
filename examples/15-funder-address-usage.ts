@@ -36,6 +36,7 @@ async function main() {
   const sdkWithProxy = new PolymarketSDK({
     privateKey: process.env.POLYMARKET_PRIVATE_KEY || '0x' + '1'.repeat(64),
     funderAddress: proxyWalletAddress,
+    signatureType: 2,
   });
   
   await sdkWithProxy.tradingService.initialize();
@@ -50,6 +51,7 @@ async function main() {
   const sdkFactory = await PolymarketSDK.create({
     privateKey: process.env.POLYMARKET_PRIVATE_KEY || '0x' + '1'.repeat(64),
     funderAddress: proxyWalletAddress,
+    signatureType: 2,
   });
   
   console.log(`  EOA Address:    ${sdkFactory.tradingService.getAddress()}`);

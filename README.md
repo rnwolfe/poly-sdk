@@ -233,7 +233,8 @@ import { PolymarketSDK } from '@catalyst-team/poly-sdk';
 // Initialize with proxy wallet address
 const sdk = await PolymarketSDK.create({
   privateKey: process.env.POLYMARKET_PRIVATE_KEY!,
-  funderAddress: '0x1234...', // Your Polymarket proxy wallet address
+  funderAddress: '0x1234...',
+  signatureType: 2,
 });
 
 // Orders will now use the proxy wallet address as the maker
@@ -251,6 +252,8 @@ console.log(`EOA: ${sdk.tradingService.getAddress()}`);
 
 sdk.stop();
 ```
+
+Use `signatureType: 1` for Magic Link/Email accounts and `signatureType: 2` for browser wallet proxy wallets.
 
 ---
 
