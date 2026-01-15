@@ -3,6 +3,7 @@
  */
 
 import type { CacheAdapter } from '@catalyst-team/cache';
+import type { SignatureType } from '@polymarket/order-utils';
 
 // ===== Basic Trading Types =====
 
@@ -119,6 +120,16 @@ export interface PolySDKOptions {
     secret: string;
     passphrase: string;
   };
+
+  /**
+   * Funder address (proxy wallet address) for order creation.
+   * If provided, this address will be used as the maker of orders instead of the EOA.
+   * This is typically the Polymarket proxy wallet address where you hold funds.
+   * If not provided, the EOA address derived from privateKey will be used.
+   */
+  funderAddress?: string;
+
+  signatureType?: SignatureType;
 }
 
 // K-Line interval types

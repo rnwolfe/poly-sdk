@@ -33,7 +33,11 @@ interface CliArgs {
   slidingWindowMs: number;   // 滑动窗口 (毫秒)
   leg2TimeoutSeconds: number; // 止损时间 (秒)
   sumTarget: number;         // 总成本目标
-  shares: number;            // 每次交易份数
+  allocation: number;
+  balanceUtilization: number;
+  dryRun: boolean;
+  singleRound: boolean;
+  monitorMinutes: number;
 }
 
 function parseArgs(): CliArgs {
@@ -56,6 +60,8 @@ function parseArgs(): CliArgs {
     return defaultVal;
   };
 
+  const hasFlag = (flag: string): boolean => args.includes(flag);
+
   // 币种默认参数
   const coinDefaults: Record<CoinType, Partial<CliArgs>> = {
     XRP: { dipThreshold: 0.40, slidingWindowMs: 3000, leg2TimeoutSeconds: 60, sumTarget: 0.85 },
@@ -72,7 +78,11 @@ function parseArgs(): CliArgs {
     slidingWindowMs: getArgValue('window', defaults.slidingWindowMs!),
     leg2TimeoutSeconds: getArgValue('timeout', defaults.leg2TimeoutSeconds!),
     sumTarget: getArgValue('target', defaults.sumTarget!),
-    shares: getArgValue('shares', 25),
+    allocation: getArgValue('alloc', 0.2),
+    balanceUtilization: getArgValue('util', 0.8),
+    dryRun: hasFlag('--dry-run'),
+    singleRound: hasFlag('--single-round'),
+    monitorMinutes: getArgValue('duration', 60),
   };
 }
 
@@ -80,8 +90,10 @@ const CLI_ARGS = parseArgs();
 const SELECTED_COIN = CLI_ARGS.coin;
 
 // Config
-const PRIVATE_KEY = process.env.PRIVATE_KEY || '';
-const MONITOR_DURATION_MS = 60 * 60 * 1000; // 1 hour
+const PRIVATE_KEY = process.env.PRIVATE_KEY || process.env.POLYMARKET_PRIVATE_KEY || process.env.POLY_PRIVKEY || '';
+const FUNDER_ADDRESS = process.env.POLYMARKET_PROXY_ADDRESS || process.env.FUNDER_ADDRESS;
+const SIGNATURE_TYPE = process.env.POLY_SIGNATURE_TYPE ? Number(process.env.POLY_SIGNATURE_TYPE) : undefined;
+const MONITOR_DURATION_MS = CLI_ARGS.monitorMinutes * 60 * 1000;
 const LOG_DIR = '/tmp/dip-arb-logs';
 
 if (!PRIVATE_KEY) {
@@ -156,8 +168,8 @@ async function main() {
   // ========================================
   const config = {
     // 交易参数 (支持命令行覆盖)
-    shares: CLI_ARGS.shares,           // --shares=25
-    sumTarget: CLI_ARGS.sumTarget,     // --target=0.95
+    shares: 5,
+    sumTarget: CLI_ARGS.sumTarget,
 
     // 订单拆分参数
     splitOrders: 1,          // 单笔下单，避免份额不匹配
@@ -170,7 +182,7 @@ async function main() {
 
     // 执行参数
     maxSlippage: 0.02,       // 2% 滑点
-    autoExecute: true,       // 自动执行
+    autoExecute: !CLI_ARGS.dryRun,
     executionCooldown: 500,  // 冷却时间 500ms
 
     // 其他
@@ -190,6 +202,75 @@ async function main() {
   // Start initial log
   startNewMarketLog('init');
 
+  // Initialize SDK
+  log('Initializing SDK...');
+  const sdkConfig: { privateKey: string; funderAddress?: string; signatureType?: number } = {
+    privateKey: PRIVATE_KEY,
+  };
+
+  if (FUNDER_ADDRESS) {
+    sdkConfig.funderAddress = FUNDER_ADDRESS;
+  }
+
+  if (SIGNATURE_TYPE !== undefined) {
+    sdkConfig.signatureType = SIGNATURE_TYPE;
+  }
+
+  const sdk = new PolymarketSDK(sdkConfig);
+
+  if (FUNDER_ADDRESS && SIGNATURE_TYPE === undefined) {
+    log('Error: POLY_SIGNATURE_TYPE is required when POLYMARKET_PROXY_ADDRESS is set');
+    saveCurrentLog('missing-signature-type');
+    return;
+  }
+
+  const balanceResult = await sdk.tradingService.getBalanceAllowance('COLLATERAL');
+  const balanceUsd = parseFloat(balanceResult.balance) / 1e6;
+  const allowanceUsd = balanceResult.allowance === 'unlimited'
+    ? Number.POSITIVE_INFINITY
+    : parseFloat(balanceResult.allowance) / 1e6;
+
+  if (CLI_ARGS.allocation <= 0 || CLI_ARGS.allocation > 1) {
+    log('Error: --alloc must be within (0, 1]');
+    saveCurrentLog('invalid-allocation');
+    return;
+  }
+
+  if (CLI_ARGS.balanceUtilization <= 0 || CLI_ARGS.balanceUtilization > 1) {
+    log('Error: --util must be within (0, 1]');
+    saveCurrentLog('invalid-utilization');
+    return;
+  }
+
+  const effectiveAllocation = Math.min(CLI_ARGS.allocation, CLI_ARGS.balanceUtilization);
+  const minShares = 5;
+  const maxBudget = balanceUsd * CLI_ARGS.balanceUtilization;
+  const targetBudget = balanceUsd * effectiveAllocation;
+  const maxShares = Math.floor(maxBudget / config.sumTarget);
+  const targetShares = Math.floor(targetBudget / config.sumTarget);
+  const recommendedMinBalance = (minShares * config.sumTarget) / effectiveAllocation;
+
+  log(`Balance: $${balanceUsd.toFixed(2)} | Allowance: ${allowanceUsd === Number.POSITIVE_INFINITY ? 'Unlimited' : `$${allowanceUsd.toFixed(2)}`} | Allocation: ${(effectiveAllocation * 100).toFixed(0)}% | Utilization: ${(CLI_ARGS.balanceUtilization * 100).toFixed(0)}%`);
+
+  if (!CLI_ARGS.dryRun && maxShares < minShares) {
+    log(`Insufficient balance for minimum trade size. Recommended >= $${recommendedMinBalance.toFixed(2)}`);
+    saveCurrentLog('insufficient-balance');
+    return;
+  }
+
+  const shares = Math.max(targetShares, minShares);
+  config.shares = shares;
+
+  const expectedCost = config.shares * config.sumTarget;
+
+  if (!CLI_ARGS.dryRun && allowanceUsd < expectedCost) {
+    log(`Insufficient allowance for expected cost $${expectedCost.toFixed(2)}`);
+    saveCurrentLog('insufficient-allowance');
+    return;
+  }
+
+  sdk.dipArb.updateConfig(config);
+
   log('');
   log('╔══════════════════════════════════════════════════════════╗');
   log(`║           DipArb Auto Trading - ${SELECTED_COIN} Markets              ║`);
@@ -198,20 +279,18 @@ async function main() {
   log(`║  Sum Target:      ${config.sumTarget} (profit >= ${expectedProfit}%)                   ║`);
   log(`║  Stop Loss:       ${config.leg2TimeoutSeconds}s after Leg1                             ║`);
   log(`║  Shares/Trade:    ${config.shares}                                          ║`);
+  log(`║  Allocation:      ${(effectiveAllocation * 100).toFixed(0)}%                                      ║`);
+  log(`║  Utilization:     ${(CLI_ARGS.balanceUtilization * 100).toFixed(0)}%                                      ║`);
+  log(`║  Min Balance:     $${recommendedMinBalance.toFixed(2)}                                   ║`);
   log(`║  Order Type:      Market Order (Leg1 + Leg2 + Exit)              ║`);
+  log(`║  Dry Run:         ${CLI_ARGS.dryRun ? 'ON' : 'OFF'}                                     ║`);
+  log(`║  Single Round:    ${CLI_ARGS.singleRound ? 'ON' : 'OFF'}                                     ║`);
+  log(`║  Duration:        ${CLI_ARGS.monitorMinutes}m                                         ║`);
   log(`║  Log Directory:   ${LOG_DIR}`);
   log('╚══════════════════════════════════════════════════════════╝');
   log('');
-  log('Usage: npx tsx auto-trade.ts --xrp [--dip=0.40] [--window=3000] [--timeout=60] [--shares=25] [--target=0.95]');
+  log('Usage: npx tsx auto-trade.ts --xrp [--dip=0.40] [--window=3000] [--timeout=60] [--target=0.95] [--alloc=0.20] [--util=0.80] [--duration=60] [--dry-run] [--single-round]');
   log('');
-
-  // Initialize SDK
-  log('Initializing SDK...');
-  const sdk = new PolymarketSDK({
-    privateKey: PRIVATE_KEY,
-  });
-
-  sdk.dipArb.updateConfig(config);
 
   // ========================================
   // Event Listeners
@@ -262,7 +341,7 @@ async function main() {
     }
   });
 
-  sdk.dipArb.on('roundComplete', (result) => {
+  sdk.dipArb.on('roundComplete', async (result) => {
     log('');
     log('┌──────────────────────────────────────────────────────────┐');
     log(`│  ROUND ${result.status.toUpperCase()}`);
@@ -270,6 +349,14 @@ async function main() {
       log(`│  Profit: $${result.profit.toFixed(4)} (${(result.profitRate! * 100).toFixed(2)}%)`);
     }
     log('└──────────────────────────────────────────────────────────┘');
+
+    if (CLI_ARGS.singleRound) {
+      log('Single-round mode complete. Stopping.');
+      saveCurrentLog('single-round');
+      await sdk.dipArb.stop();
+      sdk.stop();
+      process.exit(0);
+    }
   });
 
   sdk.dipArb.on('rotate', (event) => {
@@ -351,17 +438,21 @@ async function main() {
   log(`Time until market end: ${timeUntilEnd}s (${Math.round(timeUntilEnd / 60)}m)`);
 
   // Enable auto-rotate with redeem strategy
-  sdk.dipArb.enableAutoRotate({
-    enabled: true,
-    underlyings: [SELECTED_COIN],
-    duration: '15m',
-    settleStrategy: 'redeem',  // 等待市场结算后赎回 (5分钟后)
-    autoSettle: true,
-    preloadMinutes: 2,
-    redeemWaitMinutes: 5,       // 市场结束后等待 5 分钟再赎回
-    redeemRetryIntervalSeconds: 30,  // 每 30 秒检查一次
-  });
-  log(`Auto-rotate enabled for ${SELECTED_COIN} (with background redemption)`);
+  if (!CLI_ARGS.singleRound) {
+    sdk.dipArb.enableAutoRotate({
+      enabled: true,
+      underlyings: [SELECTED_COIN],
+      duration: '15m',
+      settleStrategy: 'redeem',  // 等待市场结算后赎回 (5分钟后)
+      autoSettle: true,
+      preloadMinutes: 2,
+      redeemWaitMinutes: 5,       // 市场结束后等待 5 分钟再赎回
+      redeemRetryIntervalSeconds: 30,  // 每 30 秒检查一次
+    });
+    log(`Auto-rotate enabled for ${SELECTED_COIN} (with background redemption)`);
+  } else {
+    log('Auto-rotate disabled in single-round mode');
+  }
 
   log('');
   log('═══════════════════════════════════════════════════════════');

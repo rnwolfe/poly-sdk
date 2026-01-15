@@ -223,6 +223,38 @@ console.log(`Open orders: ${openOrders.length}`);
 sdk.stop();
 ```
 
+#### Using Proxy Wallet Address (funderAddress)
+
+When trading on Polymarket, your funds are held in a proxy wallet contract, not your EOA (Externally Owned Account). By default, orders use your EOA address, but you can specify your proxy wallet address as the funder:
+
+```typescript
+import { PolymarketSDK } from '@catalyst-team/poly-sdk';
+
+// Initialize with proxy wallet address
+const sdk = await PolymarketSDK.create({
+  privateKey: process.env.POLYMARKET_PRIVATE_KEY!,
+  funderAddress: '0x1234...',
+  signatureType: 2,
+});
+
+// Orders will now use the proxy wallet address as the maker
+const order = await sdk.tradingService.createLimitOrder({
+  tokenId: yesTokenId,
+  side: 'BUY',
+  price: 0.45,
+  size: 10,
+  orderType: 'GTC',
+});
+
+// Get the funder address being used
+console.log(`Funder: ${sdk.tradingService.getFunderAddress()}`);
+console.log(`EOA: ${sdk.tradingService.getAddress()}`);
+
+sdk.stop();
+```
+
+Use `signatureType: 1` for Magic Link/Email accounts and `signatureType: 2` for browser wallet proxy wallets.
+
 ---
 
 ## Services Guide
@@ -282,8 +314,14 @@ import { TradingService } from '@catalyst-team/poly-sdk';
 
 const trading = new TradingService(rateLimiter, cache, {
   privateKey: process.env.POLYMARKET_PRIVATE_KEY!,
+  // Optional: Specify proxy wallet address for order creation
+  // funderAddress: '0x1234...', // Your Polymarket proxy wallet address
 });
 await trading.initialize();
+
+// Check which address will be used as the order maker
+console.log(`EOA Address: ${trading.getAddress()}`);
+console.log(`Funder Address: ${trading.getFunderAddress()}`); // Proxy wallet or EOA
 
 // ===== Limit Orders =====
 
@@ -849,6 +887,7 @@ pnpm example:arb-service  # Arbitrage service
 | [12-trending-arb-monitor.ts](examples/12-trending-arb-monitor.ts) | Real-time trending monitor |
 | [13-arbitrage-service.ts](examples/13-arbitrage-service.ts) | Full arbitrage workflow |
 | [14-dip-arb-service.ts](examples/14-dip-arb-service.ts) | Dip arbitrage for 15m crypto |
+| [15-funder-address-usage.ts](examples/15-funder-address-usage.ts) | Using proxy wallet address for trading |
 
 **DipArb Scripts** (in `scripts/dip-arb/`):
 | Script | Description |

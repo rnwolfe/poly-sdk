@@ -379,9 +379,12 @@ export class DipArbService extends EventEmitter {
       }
     );
 
-    // ✅ FIX: Check and merge existing pairs at startup
     if (this.ctf && this.config.autoMerge) {
-      await this.scanAndMergeExistingPairs();
+      if (this.isFunderAddressActive()) {
+        this.log('Auto-merge disabled when using funder address');
+      } else {
+        await this.scanAndMergeExistingPairs();
+      }
     }
 
     this.emit('started', market);
@@ -839,6 +842,16 @@ export class DipArbService extends EventEmitter {
       };
     }
 
+    if (this.isFunderAddressActive()) {
+      return {
+        success: false,
+        leg: 'merge',
+        roundId,
+        error: 'Auto-merge disabled when using funder address',
+        executionTimeMs: Date.now() - startTime,
+      };
+    }
+
     // Merge the minimum of Leg1 and Leg2 shares (should be equal after our fix)
     const shares = Math.min(
       this.currentRound.leg1?.shares || 0,
@@ -897,6 +910,11 @@ export class DipArbService extends EventEmitter {
   }
 
   // ===== Private: Event Handlers =====
+
+  private isFunderAddressActive(): boolean {
+    if (!this.tradingService) return false;
+    return this.tradingService.getFunderAddress().toLowerCase() !== this.tradingService.getAddress().toLowerCase();
+  }
 
   private handleOrderbookUpdate(book: OrderbookSnapshot): void {
     if (!this.market) return;

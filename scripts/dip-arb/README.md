@@ -26,7 +26,7 @@ npx tsx scripts/dip-arb/auto-trade.ts --sol
 npx tsx scripts/dip-arb/auto-trade.ts --xrp
 
 # 自定义参数
-npx tsx scripts/dip-arb/auto-trade.ts --xrp --dip=0.35 --target=0.90 --shares=50
+npx tsx scripts/dip-arb/auto-trade.ts --xrp --dip=0.35 --target=0.90 --alloc=0.20 --util=0.80
 ```
 
 ## 命令行参数
@@ -41,7 +41,10 @@ npx tsx scripts/dip-arb/auto-trade.ts --xrp --dip=0.35 --target=0.90 --shares=50
 | `--window=X` | 检测窗口 (毫秒) | 币种默认 |
 | `--timeout=X` | Leg2 止损时间 (秒) | 60 |
 | `--target=X` | 目标总成本 | 币种默认 |
-| `--shares=X` | 每次交易份数 | 25 |
+| `--alloc=X` | 单次交易占余额比例 | 0.20 |
+| `--util=X` | 可使用余额上限比例 | 0.80 |
+
+最低余额建议：`minBalance ≈ (5 * sumTarget) / alloc`。
 
 ## 日志
 
@@ -205,7 +208,7 @@ npx tsx scripts/dip-arb/auto-trade.ts --sol
 npx tsx scripts/dip-arb/auto-trade.ts --xrp
 
 # Custom parameters
-npx tsx scripts/dip-arb/auto-trade.ts --xrp --dip=0.35 --target=0.90 --shares=50
+npx tsx scripts/dip-arb/auto-trade.ts --xrp --dip=0.35 --target=0.90 --alloc=0.20 --util=0.80
 ```
 
 ## CLI Arguments
@@ -220,7 +223,10 @@ npx tsx scripts/dip-arb/auto-trade.ts --xrp --dip=0.35 --target=0.90 --shares=50
 | `--window=X` | Detection window (ms) | Coin default |
 | `--timeout=X` | Leg2 stop-loss time (seconds) | 60 |
 | `--target=X` | Target total cost | Coin default |
-| `--shares=X` | Shares per trade | 25 |
+| `--alloc=X` | Balance allocation per trade | 0.20 |
+| `--util=X` | Max balance utilization | 0.80 |
+
+Minimum balance guidance: `minBalance ≈ (5 * sumTarget) / alloc`.
 
 ## Logging
 
